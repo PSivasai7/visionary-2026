@@ -42,8 +42,9 @@ app.post("/api/create-capsule", async (req, res) => {
   }
 
   try {
+    // Change your model initialization to this:
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
     });
     const prompt = `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object ONLY. Keys are months, values are short tasks. No markdown, no triple backticks, no extra text. Format: {"January": "task", ...}`;
 
@@ -85,3 +86,14 @@ app.post("/api/create-capsule", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+// Add this temporary function to see your available models in Render logs
+async function listModels() {
+  try {
+    const result = await genAI.listModels();
+    console.log("Available Models for Alekhya:");
+    result.models.forEach((m) => console.log("- " + m.name));
+  } catch (err) {
+    console.error("List Models Error:", err);
+  }
+}
+listModels(); // Call it once at the top of your script
