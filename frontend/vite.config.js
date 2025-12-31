@@ -11,4 +11,8 @@ export default defineConfig({
       react: path.resolve("./node_modules/react"),
     },
   },
+  build: {
+    // This ensures that the build doesn't fail due to small warnings
+    chunkSizeWarningLimit: 1600,
+  },
 });
