@@ -42,7 +42,9 @@ app.post("/api/create-capsule", async (req, res) => {
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash-latest",
+    });
     const prompt = `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object ONLY. Keys are months, values are short tasks. No markdown, no triple backticks, no extra text. Format: {"January": "task", ...}`;
 
     const result = await model.generateContent(prompt);
