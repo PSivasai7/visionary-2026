@@ -70,12 +70,12 @@ export default function App() {
         <div
           className={`px-8 py-3 rounded-full font-black text-sm tracking-widest transition-all duration-700 shadow-2xl ${
             isNewYear
-              ? "bg-emerald-500 text-white animate-bounce scale-110 shadow-emerald-500/20"
+              ? "bg-emerald-500 text-white animate-bounce scale-110 shadow-transparent-500/20"
               : "bg-purple-500/10 border border-purple-500/30 text-purple-400"
           }`}
         >
           {isNewYear
-            ? "🎆 HAPPY NEW YEAR 2026!"
+            ? " HAPPY NEW YEAR 2026!"
             : `COUNTDOWN: ${formatTime(timeLeft)}`}
         </div>
       </nav>
