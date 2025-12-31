@@ -22,7 +22,7 @@ export default function App() {
     try {
       // Replace the URL below with your Render URL after deployment
       const res = await axios.post(
-        "http://localhost:5000/api/create-capsule",
+        "https://visionary-2026.onrender.com",
         formData
       );
 
