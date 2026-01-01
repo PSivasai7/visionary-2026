@@ -4,7 +4,7 @@ const cors = require("cors");
 const CryptoJS = require("crypto-js");
 const { OpenAI } = require("openai");
 const cron = require("node-cron");
-const nodemailer = require("nodemailer"); // Back to nodemailer
+const emailjs = require("@emailjs/nodejs"); // Replaced nodemailer with EmailJS
 const axios = require("axios");
 require("dotenv").config();
 
@@ -41,22 +41,7 @@ const openai = new OpenAI({
   },
 });
 
-// 4. GMAIL TRANSPORTER (Option 1: Tuned for Render)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // SSL
-  auth: {
-    user: process.env.SYSTEM_EMAIL,
-    pass: process.env.SYSTEM_PASSWORD, // 16-character App Password
-  },
-  connectionTimeout: 20000, // 20 seconds
-  greetingTimeout: 20000,
-  socketTimeout: 30000,
-});
-
-// 5. KEEP-ALIVE (Every 14 mins)
+// 4. KEEP-ALIVE (Every 14 mins)
 cron.schedule("*/14 * * * *", async () => {
   try {
     await axios.get("https://visionary-2026.onrender.com/api/health");
@@ -68,50 +53,55 @@ cron.schedule("*/14 * * * *", async () => {
 
 app.get("/api/health", (req, res) => res.send("I am awake!"));
 
-// 6. IMMEDIATE EMAIL FUNCTION (Using Gmail)
+// 5. IMMEDIATE EMAIL FUNCTION (Using EmailJS API)
 const sendImmediateRoadmap = async (email, goal, roadmap) => {
-  const roadmapList = Object.entries(roadmap)
+  // Format the roadmap into an HTML list for the EmailJS template
+  const roadmapHTML = Object.entries(roadmap)
     .map(([month, task]) => `<li><strong>${month}:</strong> ${task}</li>`)
     .join("");
 
-  const mailOptions = {
-    from: `"Visionary 2026 Vault" <${process.env.SYSTEM_EMAIL}>`,
-    to: email,
-    subject: "🚀 MISSION ARCHITECTED: Your 2026 Roadmap",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width:600px; padding:20px; border: 1px solid #eee; border-radius:10px;">
-        <h2 style="color: #4f46e5;">Hello Visionary 👋</h2>
-        <p>Your mission for 2026 has been sealed:</p>
-        <blockquote style="background:#f9f9f9; padding:10px; border-left:4px solid #4f46e5;">"${goal}"</blockquote>
-        <h3>Your AI-Crafted Roadmap</h3>
-        <ul style="line-height:1.6;">${roadmapList}</ul>
-        <p style="margin-top:20px; font-size: 0.9em; color: #666;">
-          Stay consistent. Follow the roadmap. Your secret message unseals on <b>Dec 31, 2026</b>. 🔐
-        </p>
-      </div>
-    `,
+  // These keys must match the {{variable_names}} in your EmailJS Dashboard template
+  const templateParams = {
+    user_email: email,
+    user_goal: goal,
+    user_roadmap: `<ul>${roadmapHTML}</ul>`,
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log(`📩 Roadmap email sent via Gmail to ${email}`);
+    await emailjs.send(
+      process.env.EMAILJS_SERVICE_ID,
+      process.env.EMAILJS_TEMPLATE_ID,
+      templateParams,
+      {
+        publicKey: process.env.EMAILJS_PUBLIC_KEY,
+        privateKey: process.env.EMAILJS_PRIVATE_KEY, // Get this from Account -> API Keys
+      }
+    );
+    console.log(`📩 Roadmap email sent via EmailJS API to ${email}`);
   } catch (err) {
-    console.error("❌ Gmail Send Failed:", err.message);
+    console.error("❌ EmailJS Send Failed:", err);
   }
 };
 
-// 7. YEAR-END CRON JOB
+// 6. YEAR-END CRON JOB (Also updated to use EmailJS for stability)
 cron.schedule("0 0 * * *", async () => {
   if (new Date() >= new Date("2026-12-31")) {
     const pending = await Capsule.find({ isSent: false });
     for (let capsule of pending) {
       try {
-        await transporter.sendMail({
-          from: `"Visionary 2026" <${process.env.SYSTEM_EMAIL}>`,
-          to: capsule.email,
-          subject: "🔓 MISSION UNSEALED: Your 2026 Time Capsule",
-          html: `<h2>Mission Unlocked 🎉</h2><p>Your goal was: <b>${capsule.goal}</b>. The vault is open.</p>`,
-        });
+        await emailjs.send(
+          process.env.EMAILJS_SERVICE_ID,
+          process.env.EMAILJS_TEMPLATE_ID, // You can use a different template for unsealing if you want
+          {
+            user_email: capsule.email,
+            user_goal: capsule.goal,
+            user_roadmap: "The vault is now open. Mission Complete!",
+          },
+          {
+            publicKey: process.env.EMAILJS_PUBLIC_KEY,
+            privateKey: process.env.EMAILJS_PRIVATE_KEY,
+          }
+        );
         capsule.isSent = true;
         await capsule.save();
       } catch (err) {
@@ -121,7 +111,7 @@ cron.schedule("0 0 * * *", async () => {
   }
 });
 
-// 8. THE MAIN ENDPOINT
+// 7. THE MAIN ENDPOINT
 app.post("/api/create-capsule", async (req, res) => {
   const { email, goal, note } = req.body;
   if (!email || !goal || !note) return res.status(400).json({ success: false });
@@ -158,7 +148,7 @@ app.post("/api/create-capsule", async (req, res) => {
     const newCapsule = new Capsule({ email, goal, encryptedNote, roadmap });
     await newCapsule.save();
 
-    // Call Gmail function
+    // Call the EmailJS function
     await sendImmediateRoadmap(email, goal, roadmap);
 
     res.json({ success: true, roadmap });
