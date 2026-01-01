@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+
 export default function App() {
   const [formData, setFormData] = useState({ email: "", goal: "", note: "" });
   const [loading, setLoading] = useState(false);
   const [roadmap, setRoadmap] = useState(null);
+  const [mailSent, setMailSent] = useState(false); // NEW: State for email confirmation message
 
   const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
   const [isNewYear, setIsNewYear] = useState(false);
@@ -46,7 +48,10 @@ export default function App() {
         }
       );
       const data = await response.json();
-      if (data.success) setRoadmap(data.roadmap);
+      if (data.success) {
+        setRoadmap(data.roadmap);
+        setMailSent(true); // NEW: Set mail confirmation to true
+      }
     } catch (err) {
       alert("System Error: Vault access denied.");
     }
@@ -91,16 +96,7 @@ export default function App() {
               "Bridge the gap between who you are today and who you intend to
               become. <strong>Visionary '26 </strong> is a hybrid AI engine
               built to make your resolution fulfill. We don't just store your
-              dreams; we architect them into a 12-month tactical strategy. Seal
-              your mission in our encrypted vault, and we’ll safeguard your
-              roadmap until you're ready to unseal your success."
-            </p>
-            <p>
-              Your personal message and roadmap are encrypted
-              {/* via{" "} */}
-              {/* <strong>AES-256</strong> */}
-              and locked in our digital vault. At the end of 2026, we will
-              automatically deliver this capsule back to your inbox.
+              dreams; we architect them into a 12-month tactical strategy."
             </p>
           </div>
         </header>
@@ -127,7 +123,7 @@ export default function App() {
                 <input
                   required
                   type="text"
-                  placeholder="Your New Year Resolution Or Goal (e.g. Senior CSE Developer)"
+                  placeholder="Your New Year Resolution Or Goal"
                   className="w-full bg-black/40 border border-white/5 p-4 rounded-2xl focus:border-purple-500/50 outline-none transition-all placeholder:text-slate-700"
                   onChange={(e) =>
                     setFormData({ ...formData, goal: e.target.value })
@@ -158,8 +154,16 @@ export default function App() {
               <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter text-emerald-400">
                 Roadmap Architected
               </h2>
+              {/* NEW: Success Message logic */}
+              {mailSent && (
+                <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 font-bold animate-pulse">
+                  🚀 Mission Sealed! We've sent your 2026 roadmap to your email
+                  ID.
+                </div>
+              )}
               <p className="text-slate-400 mt-4">
-                This strategy is now time-locked in the vault.
+                This strategy is now time-locked in the vault. Follow the
+                roadmap and wait for the year end!
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
