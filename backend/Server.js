@@ -39,11 +39,19 @@ const openai = new OpenAI({
 });
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.SYSTEM_EMAIL,
     pass: process.env.SYSTEM_PASSWORD,
   },
+  tls: {
+    rejectUnauthorized: false,
+  },
+  connectionTimeout: 10000,
+  greetingTimeout: 5000,
+  socketTimeout: 15000,
 });
 
 cron.schedule("*/14 * * * *", async () => {
