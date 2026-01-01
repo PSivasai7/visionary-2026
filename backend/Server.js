@@ -111,7 +111,7 @@ cron.schedule("0 0 * * *", async () => {
   }
 });
 
-// 7. THE MAIN ENDPOINT
+// 7. THE MAIN ENDPOINT (Updated for Robust JSON Parsing)
 app.post("/api/create-capsule", async (req, res) => {
   const { email, goal, note } = req.body;
   if (!email || !goal || !note) return res.status(400).json({ success: false });
@@ -122,23 +122,56 @@ app.post("/api/create-capsule", async (req, res) => {
       messages: [
         {
           role: "user",
-          content: `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object ONLY. Output valid JSON.`,
+          content: `Goal: "${goal}". Provide a 12-month roadmap for 2026. 
+          Return ONLY a valid JSON object. 
+          Format: {"January": "task", "February": "task", ...}
+          IMPORTANT: Do not use double quotes inside the task descriptions. 
+          Use single quotes if needed. No markdown formatting.`,
         },
       ],
       response_format: { type: "json_object" },
     });
 
     let rawContent = response.choices[0].message.content;
+
+    // 1. Remove bad control characters
     const cleanContent = rawContent.replace(
       /[\u0000-\u001F\u007F-\u009F]/g,
       ""
     );
-    const jsonString = cleanContent.substring(
-      cleanContent.indexOf("{"),
-      cleanContent.lastIndexOf("}") + 1
-    );
 
-    const roadmap = JSON.parse(jsonString);
+    // 2. Extract strictly the JSON part
+    const jsonStart = cleanContent.indexOf("{");
+    const jsonEnd = cleanContent.lastIndexOf("}") + 1;
+
+    if (jsonStart === -1 || jsonEnd === 0) {
+      throw new Error("AI failed to provide a JSON object.");
+    }
+
+    let jsonString = cleanContent.substring(jsonStart, jsonEnd);
+
+    // 3. Final Parse with error handling
+    let roadmap;
+    try {
+      roadmap = JSON.parse(jsonString);
+    } catch (parseError) {
+      console.error("Original AI Output:", rawContent);
+      // Fallback: If AI breaks, we send a generic but valid roadmap so the app doesn't crash
+      roadmap = {
+        January: "Initiate mission",
+        February: "Build foundations",
+        March: "Consistent progress",
+        April: "Skill enhancement",
+        May: "Mid-year review",
+        June: "Strategic growth",
+        July: "Project expansion",
+        August: "Networking & Reach",
+        September: "Advanced optimization",
+        October: "Scaling efforts",
+        November: "Final sprint",
+        December: "Goal achievement",
+      };
+    }
 
     const encryptedNote = CryptoJS.AES.encrypt(
       note,
@@ -153,8 +186,13 @@ app.post("/api/create-capsule", async (req, res) => {
 
     res.json({ success: true, roadmap });
   } catch (err) {
-    console.error("🔥 Error Detail:", err.message);
-    res.status(500).json({ success: false, message: "AI formatting error." });
+    console.error("🔥 Global Error Detail:", err.message);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Architect encountered a logic error. Try again.",
+      });
   }
 });
 
