@@ -4,7 +4,7 @@ const cors = require("cors");
 const CryptoJS = require("crypto-js");
 const { OpenAI } = require("openai");
 const cron = require("node-cron");
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer"); // Back to nodemailer
 const axios = require("axios");
 require("dotenv").config();
 
@@ -31,7 +31,7 @@ const CapsuleSchema = new mongoose.Schema({
 
 const Capsule = mongoose.model("Capsule", CapsuleSchema);
 
-// 3. AI & EMAIL CONFIG
+// 3. AI CONFIGURATION
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -41,9 +41,22 @@ const openai = new OpenAI({
   },
 });
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// 4. GMAIL TRANSPORTER (Option 1: Tuned for Render)
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // SSL
+  auth: {
+    user: process.env.SYSTEM_EMAIL,
+    pass: process.env.SYSTEM_PASSWORD, // 16-character App Password
+  },
+  connectionTimeout: 20000, // 20 seconds
+  greetingTimeout: 20000,
+  socketTimeout: 30000,
+});
 
-// 4. KEEP-ALIVE (Every 14 mins)
+// 5. KEEP-ALIVE (Every 14 mins)
 cron.schedule("*/14 * * * *", async () => {
   try {
     await axios.get("https://visionary-2026.onrender.com/api/health");
@@ -55,47 +68,49 @@ cron.schedule("*/14 * * * *", async () => {
 
 app.get("/api/health", (req, res) => res.send("I am awake!"));
 
-// 5. IMMEDIATE EMAIL FUNCTION
+// 6. IMMEDIATE EMAIL FUNCTION (Using Gmail)
 const sendImmediateRoadmap = async (email, goal, roadmap) => {
   const roadmapList = Object.entries(roadmap)
     .map(([month, task]) => `<li><strong>${month}:</strong> ${task}</li>`)
     .join("");
 
+  const mailOptions = {
+    from: `"Visionary 2026 Vault" <${process.env.SYSTEM_EMAIL}>`,
+    to: email,
+    subject: "🚀 MISSION ARCHITECTED: Your 2026 Roadmap",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width:600px; padding:20px; border: 1px solid #eee; border-radius:10px;">
+        <h2 style="color: #4f46e5;">Hello Visionary 👋</h2>
+        <p>Your mission for 2026 has been sealed:</p>
+        <blockquote style="background:#f9f9f9; padding:10px; border-left:4px solid #4f46e5;">"${goal}"</blockquote>
+        <h3>Your AI-Crafted Roadmap</h3>
+        <ul style="line-height:1.6;">${roadmapList}</ul>
+        <p style="margin-top:20px; font-size: 0.9em; color: #666;">
+          Stay consistent. Follow the roadmap. Your secret message unseals on <b>Dec 31, 2026</b>. 🔐
+        </p>
+      </div>
+    `,
+  };
+
   try {
-    await resend.emails.send({
-      from: "Visionary <onboarding@resend.dev>",
-      to: email,
-      subject: "🚀 MISSION ARCHITECTED: Your 2026 Roadmap",
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width:600px; padding:20px; border: 1px solid #eee; border-radius:10px;">
-          <h2 style="color: #4f46e5;">Hello Visionary 👋</h2>
-          <p>Your mission for 2026 has been sealed:</p>
-          <blockquote style="background:#f9f9f9; padding:10px; border-left:4px solid #4f46e5;">"${goal}"</blockquote>
-          <h3>Your AI-Crafted Roadmap</h3>
-          <ul style="line-height:1.6;">${roadmapList}</ul>
-          <p style="margin-top:20px; font-size: 0.9em; color: #666;">
-            Stay consistent. Follow the roadmap. Your secret message unseals on <b>Dec 31, 2026</b>. 🔐
-          </p>
-        </div>
-      `,
-    });
-    console.log(`📩 Roadmap email sent to ${email}`);
+    await transporter.sendMail(mailOptions);
+    console.log(`📩 Roadmap email sent via Gmail to ${email}`);
   } catch (err) {
-    console.error("❌ Email send failed:", err);
+    console.error("❌ Gmail Send Failed:", err.message);
   }
 };
 
-// 6. YEAR-END CRON JOB
+// 7. YEAR-END CRON JOB
 cron.schedule("0 0 * * *", async () => {
   if (new Date() >= new Date("2026-12-31")) {
     const pending = await Capsule.find({ isSent: false });
     for (let capsule of pending) {
       try {
-        await resend.emails.send({
-          from: "Visionary <onboarding@resend.dev>",
+        await transporter.sendMail({
+          from: `"Visionary 2026" <${process.env.SYSTEM_EMAIL}>`,
           to: capsule.email,
           subject: "🔓 MISSION UNSEALED: Your 2026 Time Capsule",
-          html: `<h2>Mission Unlocked 🎉</h2><p>Your goal: <b>${capsule.goal}</b></p>`,
+          html: `<h2>Mission Unlocked 🎉</h2><p>Your goal was: <b>${capsule.goal}</b>. The vault is open.</p>`,
         });
         capsule.isSent = true;
         await capsule.save();
@@ -106,7 +121,7 @@ cron.schedule("0 0 * * *", async () => {
   }
 });
 
-// 7. THE MAIN ENDPOINT (WITH JSON FIX)
+// 8. THE MAIN ENDPOINT
 app.post("/api/create-capsule", async (req, res) => {
   const { email, goal, note } = req.body;
   if (!email || !goal || !note) return res.status(400).json({ success: false });
@@ -117,22 +132,17 @@ app.post("/api/create-capsule", async (req, res) => {
       messages: [
         {
           role: "user",
-          content: `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object. Keys must be month names. Values must be short tasks. Output ONLY valid JSON. No markdown blocks.`,
+          content: `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object ONLY. Output valid JSON.`,
         },
       ],
       response_format: { type: "json_object" },
     });
 
     let rawContent = response.choices[0].message.content;
-
-    // --- 🛠️ FIX: REMOVE BAD CONTROL CHARACTERS ---
-    // This regex removes invisible characters that break JSON.parse
     const cleanContent = rawContent.replace(
       /[\u0000-\u001F\u007F-\u009F]/g,
       ""
     );
-
-    // Find the first '{' and last '}' to ensure we only parse the object
     const jsonString = cleanContent.substring(
       cleanContent.indexOf("{"),
       cleanContent.lastIndexOf("}") + 1
@@ -148,17 +158,13 @@ app.post("/api/create-capsule", async (req, res) => {
     const newCapsule = new Capsule({ email, goal, encryptedNote, roadmap });
     await newCapsule.save();
 
-    // Send the roadmap via Resend
+    // Call Gmail function
     await sendImmediateRoadmap(email, goal, roadmap);
 
     res.json({ success: true, roadmap });
   } catch (err) {
     console.error("🔥 Error Detail:", err.message);
-    res.status(500).json({
-      success: false,
-      message:
-        "The AI Architect encountered a formatting error. Please try again.",
-    });
+    res.status(500).json({ success: false, message: "AI formatting error." });
   }
 });
 
