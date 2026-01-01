@@ -2,23 +2,21 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const CryptoJS = require("crypto-js");
-const { OpenAI } = require("openai"); // Switched from Google to OpenAI SDK
+const { OpenAI } = require("openai");
 const cron = require("node-cron");
 const nodemailer = require("nodemailer");
-const axios = require("axios"); // Added for the Keep-Alive ping
+const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. DATABASE CONNECTION
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Connected to MongoDB Atlas"))
   .catch((err) => console.error("❌ DB Connection Error:", err));
 
-// 2. DATABASE MODEL
 const CapsuleSchema = new mongoose.Schema({
   email: { type: String, required: true },
   goal: { type: String, required: true },
@@ -31,17 +29,15 @@ const CapsuleSchema = new mongoose.Schema({
 
 const Capsule = mongoose.model("Capsule", CapsuleSchema);
 
-// 3. AI CONFIGURATION (OPENROUTER)
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY, // Remember to add this to Render!
+  apiKey: process.env.OPENROUTER_API_KEY,
   defaultHeaders: {
     "HTTP-Referer": "https://visionary-2026.vercel.app",
     "X-Title": "Visionary 2026",
   },
 });
 
-// 4. NODEMAILER CONFIG
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -50,22 +46,18 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 5. KEEP-ALIVE CRON JOB (Prevents Render Sleep)
-// Pings your server every 14 minutes so it never "shuts down" on the free tier
 cron.schedule("*/14 * * * *", async () => {
   try {
     const serverUrl = "https://visionary-2026.onrender.com/api/health"; // We add this route below
     await axios.get(serverUrl);
-    console.log("💓 Keep-Alive: Server pinged successfully.");
+    console.log(" Keep-Alive: Server pinged successfully.");
   } catch (err) {
-    console.log("💓 Keep-Alive: Ping failed, but that's okay.");
+    console.log(" Keep-Alive: Ping failed, but that's okay.");
   }
 });
 
-// Health check route for the Keep-Alive ping
 app.get("/api/health", (req, res) => res.send("I am awake!"));
 
-// 6. 2026 DELIVERY CRON JOB (Runs once a day)
 cron.schedule("0 0 * * *", async () => {
   const today = new Date();
   const targetDate = new Date("2026-12-31");
@@ -93,7 +85,6 @@ cron.schedule("0 0 * * *", async () => {
   }
 });
 
-// 7. THE API ENDPOINT (OPENROUTER FREE)
 app.post("/api/create-capsule", async (req, res) => {
   const { email, goal, note } = req.body;
 
@@ -102,7 +93,6 @@ app.post("/api/create-capsule", async (req, res) => {
   }
 
   try {
-    // Calling Meta Llama 3 8B (FREE MODEL)
     const response = await openai.chat.completions.create({
       model: "meta-llama/llama-3-8b-instruct:free",
       messages: [
@@ -116,11 +106,9 @@ app.post("/api/create-capsule", async (req, res) => {
 
     const roadmap = JSON.parse(response.choices[0].message.content);
 
-    // ENCRYPTION
     const secret = process.env.SECRET_KEY || "temporary_backup_key_2026";
     const encryptedNote = CryptoJS.AES.encrypt(note, secret).toString();
 
-    // SAVE TO DB
     const newCapsule = new Capsule({ email, goal, encryptedNote, roadmap });
     await newCapsule.save();
 
