@@ -4,7 +4,7 @@ const cors = require("cors");
 const CryptoJS = require("crypto-js");
 const { OpenAI } = require("openai");
 const cron = require("node-cron");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const axios = require("axios");
 require("dotenv").config();
 
@@ -38,33 +38,48 @@ const openai = new OpenAI({
   },
 });
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.SYSTEM_EMAIL,
-    pass: process.env.SYSTEM_PASSWORD,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 5000,
-  socketTimeout: 15000,
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 cron.schedule("*/14 * * * *", async () => {
   try {
-    const serverUrl = "https://visionary-2026.onrender.com/api/health"; // We add this route below
-    await axios.get(serverUrl);
-    console.log(" Keep-Alive: Server pinged successfully.");
-  } catch (err) {
-    console.log(" Keep-Alive: Ping failed, but that's okay.");
+    await axios.get("https://visionary-2026.onrender.com/api/health");
+    console.log("🟢 Keep-Alive ping successful");
+  } catch {
+    console.log("⚠️ Keep-Alive ping failed");
   }
 });
 
 app.get("/api/health", (req, res) => res.send("I am awake!"));
+
+const sendImmediateRoadmap = async (email, goal, roadmap) => {
+  const roadmapList = Object.entries(roadmap)
+    .map(([month, task]) => `<li><strong>${month}:</strong> ${task}</li>`)
+    .join("");
+
+  try {
+    await resend.emails.send({
+      from: "Visionary <onboarding@resend.dev>",
+      to: email,
+      subject: "🚀 MISSION ARCHITECTED: Your 2026 Roadmap",
+      html: `
+        <div style="font-family: Arial; max-width:600px; padding:20px;">
+          <h2>Hello Visionary 👋</h2>
+          <p>Your mission for 2026 has been sealed:</p>
+          <strong>${goal}</strong>
+          <h3>Your AI-Crafted Roadmap</h3>
+          <ul>${roadmapList}</ul>
+          <p style="margin-top:20px;">
+            Stay consistent. We'll unlock your capsule on <b>Dec 31, 2026</b>. 🔐
+          </p>
+        </div>
+      `,
+    });
+
+    console.log(`📩 Roadmap email sent to ${email}`);
+  } catch (err) {
+    console.error("❌ Email send failed:", err);
+  }
+};
 
 cron.schedule("0 0 * * *", async () => {
   const today = new Date();
@@ -72,58 +87,30 @@ cron.schedule("0 0 * * *", async () => {
 
   if (today >= targetDate) {
     const pendingCapsules = await Capsule.find({ isSent: false });
+
     for (let capsule of pendingCapsules) {
       try {
-        await transporter.sendMail({
-          from: '"Visionary 2026 Vault" <no-reply@visionary.com>',
+        await resend.emails.send({
+          from: "Visionary <onboarding@resend.dev>",
           to: capsule.email,
-          subject: "🔓 MISSION UNSEALED: Your 2026 Time Capsule is Ready!",
-          html: `<div style="padding:20px; font-family:sans-serif;">
-                  <h2>Hello Visionary!</h2>
-                  <p>One year ago, you set the goal: <strong>${capsule.goal}</strong>.</p>
-                  <p>The time has come to unseal your message. Happy 2027!</p>
-                 </div>`,
+          subject: "🔓 MISSION UNSEALED: Your 2026 Time Capsule",
+          html: `
+            <div style="font-family:Arial;padding:20px;">
+              <h2>Your Mission Has Been Unlocked 🎉</h2>
+              <p>Your original goal:</p>
+              <strong>${capsule.goal}</strong>
+            </div>
+          `,
         });
+
         capsule.isSent = true;
         await capsule.save();
       } catch (err) {
-        console.error(`Mail failed for ${capsule.email}:`, err);
+        console.error(`❌ Failed to send final email to ${capsule.email}`, err);
       }
     }
   }
 });
-
-const sendImmediateRoadmap = async (email, goal, roadmap) => {
-  const roadmapList = Object.entries(roadmap)
-    .map(([month, task]) => `<li><strong>${month}:</strong> ${task}</li>`)
-    .join("");
-
-  const mailOptions = {
-    from: '"Visionary 2026 Vault" <no-reply@visionary.com>',
-    to: email,
-    subject: "🚀 MISSION ARCHITECTED: Your 2026 Roadmap is Here!",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; border: 1px solid #ddd; padding: 20px; border-radius: 10px;">
-        <h2 style="color: #4f46e5;">Hello Visionary!</h2>
-        <p>You've successfully sealed your mission for the year: <strong>"${goal}"</strong>.</p>
-        <p>As promised, here is your AI-architected roadmap to guide you through 2026:</p>
-        <ul style="line-height: 1.6;">${roadmapList}</ul>
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-        <p style="font-style: italic; color: #666;">
-          "Follow the roadmap, stay consistent, and wait for the year-end when your secret message will be unsealed."
-        </p>
-        <p>We'll see you in the vault on December 31, 2026. 🔒</p>
-      </div>
-    `,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`📩 Roadmap email sent to ${email}`);
-  } catch (err) {
-    console.error("❌ Failed to send immediate email:", err);
-  }
-};
 
 app.post("/api/create-capsule", async (req, res) => {
   const { email, goal, note } = req.body;
@@ -135,35 +122,37 @@ app.post("/api/create-capsule", async (req, res) => {
       messages: [
         {
           role: "user",
-          content: `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object ONLY. Keys are months, values are short tasks. Format: {"January": "task", ...}`,
+          content: `Goal: "${goal}". Provide a 12-month roadmap for 2026 as a JSON object ONLY.`,
         },
       ],
       response_format: { type: "json_object" },
     });
 
-    let responseText = response.choices[0].message.content;
-    const jsonString = responseText.substring(
-      responseText.indexOf("{"),
-      responseText.lastIndexOf("}") + 1
-    );
-    const roadmap = JSON.parse(jsonString);
+    const roadmap = JSON.parse(response.choices[0].message.content);
 
-    const secret = process.env.SECRET_KEY || "visionary_2026";
-    const encryptedNote = CryptoJS.AES.encrypt(note, secret).toString();
+    const encryptedNote = CryptoJS.AES.encrypt(
+      note,
+      process.env.SECRET_KEY || "visionary_2026"
+    ).toString();
 
-    const newCapsule = new Capsule({ email, goal, encryptedNote, roadmap });
+    const newCapsule = new Capsule({
+      email,
+      goal,
+      encryptedNote,
+      roadmap,
+    });
+
     await newCapsule.save();
-
     await sendImmediateRoadmap(email, goal, roadmap);
 
     res.json({
       success: true,
-      message: "Mission architected and roadmap email sent successfully.",
+      message: "Mission architected and roadmap sent!",
       roadmap,
     });
-  } catch (error) {
-    console.error("🔥 Error:", error);
-    res.status(500).json({ success: false, message: "AI Architect error." });
+  } catch (err) {
+    console.error("🔥 Error:", err);
+    res.status(500).json({ success: false });
   }
 });
 
